@@ -579,7 +579,7 @@ if __name__ == '__main__':
     X_test = test_processed[feature_cols]
 
     config = {
-        'max_depth': 3,
+        'max_depth': 6,
         'min_samples_split': 50,
         'min_samples_leaf': 25,
         'max_features': None
