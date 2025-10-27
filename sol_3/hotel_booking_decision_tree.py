@@ -1,11 +1,13 @@
-# 导入必要的库
+# 酒店预订取消预测 - 自定义决策树实现
+# Hotel Booking Cancellation Prediction - Custom Decision Tree Implementation
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score, classification_report
+from sklearn.metrics import f1_score, classification_report, confusion_matrix
 import time
 import warnings
 import matplotlib.patches as mpatches
@@ -18,46 +20,50 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
 
-# 分区间策略配置
-BINNING_STRATEGIES = {
+# 酒店预订数据分区间策略配置
+HOTEL_BINNING_STRATEGIES = {
     # 高唯一值比例特征 - 必须分区间
-    'price': {
-        'strategy': 'equal_width',
+    'avg_price_per_room': {
+        'strategy': 'quantile',
         'n_bins': 8,
         'bin_edges': None  # 将在运行时计算
     },
-    'loan_amount': {
-        'strategy': 'equal_width', 
+    'lead_time': {
+        'strategy': 'quantile', 
         'n_bins': 8,
         'bin_edges': None
     },
-    'down_payment': {
+    'no_of_week_nights': {
         'strategy': 'equal_width',
-        'n_bins': 8, 
+        'n_bins': 6, 
         'bin_edges': None
     },
-    # 高偏度特征 - 使用分位数分区间
-    'emi_to_income_ratio': {
-        'strategy': 'quantile',
-        'n_bins': 8,
-        'bin_edges': None
-    },
-    # 中等风险特征 - 适度分区间
-    'customer_salary': {
+    'no_of_weekend_nights': {
         'strategy': 'equal_width',
         'n_bins': 6,
         'bin_edges': None
     },
-    'property_size_sqft': {
+    # 中等风险特征 - 适度分区间
+    'no_of_adults': {
+        'strategy': 'equal_width',
+        'n_bins': 5,
+        'bin_edges': None
+    },
+    'no_of_children': {
+        'strategy': 'equal_width',
+        'n_bins': 4,
+        'bin_edges': None
+    },
+    'arrival_month': {
         'strategy': 'equal_width',
         'n_bins': 6,
         'bin_edges': None
     }
 }
 
-def apply_binning_strategies(df, binning_strategies, is_training=True):
+def apply_hotel_binning_strategies(df, binning_strategies, is_training=True):
     """
-    应用分区间策略到数据框
+    应用分区间策略到酒店预订数据框
     
     Args:
         df: 输入数据框
@@ -105,17 +111,17 @@ def apply_binning_strategies(df, binning_strategies, is_training=True):
     
     return df_binned, bin_edges_dict
 
-# 数据预处理函数
-def preprocess_data(train_df, test_df):
-    """优化的数据预处理函数 - 包含分区间处理"""
+# 酒店预订数据预处理函数
+def preprocess_hotel_data(train_df, test_df):
+    """酒店预订数据预处理函数 - 包含分区间处理"""
     train_processed = train_df.copy()
     test_processed = test_df.copy()
 
-    print("开始数据预处理...")
+    print("开始酒店预订数据预处理...")
     
     # 1. 处理分类变量
     print("1. 处理分类变量...")
-    categorical_cols = ['country', 'property_type', 'furnishing_status']
+    categorical_cols = ['type_of_meal_plan', 'room_type_reserved', 'market_segment_type']
     label_encoders = {}
 
     for col in categorical_cols:
@@ -128,8 +134,8 @@ def preprocess_data(train_df, test_df):
 
     # 2. 应用分区间策略
     print("2. 应用分区间策略...")
-    train_processed, bin_edges_dict = apply_binning_strategies(
-        train_processed, BINNING_STRATEGIES, is_training=True
+    train_processed, bin_edges_dict = apply_hotel_binning_strategies(
+        train_processed, HOTEL_BINNING_STRATEGIES, is_training=True
     )
     
     # 为测试数据使用相同的分区间边界
@@ -146,50 +152,87 @@ def preprocess_data(train_df, test_df):
     # 3. 特征工程 - 创建有意义的特征
     print("3. 创建衍生特征...")
     
-    # 1. 可负担性比率
-    train_processed['affordability_ratio'] = train_processed['customer_salary'] / (train_processed['price'] + 1)
-    test_processed['affordability_ratio'] = test_processed['customer_salary'] / (test_processed['price'] + 1)
+    # 1. 总住宿天数
+    train_processed['total_nights'] = train_processed['no_of_week_nights'] + train_processed['no_of_weekend_nights']
+    test_processed['total_nights'] = test_processed['no_of_week_nights'] + test_processed['no_of_weekend_nights']
 
-    # 2. 贷款价值比
-    train_processed['loan_to_value'] = train_processed['loan_amount'] / (train_processed['price'] + 1)
-    test_processed['loan_to_value'] = test_processed['loan_amount'] / (test_processed['price'] + 1)
+    # 2. 总客人数量
+    train_processed['total_guests'] = train_processed['no_of_adults'] + train_processed['no_of_children']
+    test_processed['total_guests'] = test_processed['no_of_adults'] + test_processed['no_of_children']
 
-    # 3. 房产年龄
-    current_year = 2025
-    train_processed['property_age'] = current_year - train_processed['constructed_year']
-    test_processed['property_age'] = current_year - test_processed['constructed_year']
+    # 3. 预订提前期分类
+    def categorize_lead_time(lead_time):
+        if lead_time <= 7:
+            return 0  # 短期预订
+        elif lead_time <= 30:
+            return 1  # 中期预订
+        elif lead_time <= 90:
+            return 2  # 长期预订
+        else:
+            return 3  # 超长期预订
+    
+    train_processed['lead_time_category'] = train_processed['lead_time'].apply(categorize_lead_time)
+    test_processed['lead_time_category'] = test_processed['lead_time'].apply(categorize_lead_time)
 
-    # 4. 支付能力
-    train_processed['payment_capacity'] = train_processed['customer_salary'] - train_processed['monthly_expenses']
-    test_processed['payment_capacity'] = test_processed['customer_salary'] - test_processed['monthly_expenses']
+    # 4. 价格区间分类
+    def categorize_price(price):
+        if price <= 50:
+            return 0  # 低价
+        elif price <= 100:
+            return 1  # 中低价
+        elif price <= 150:
+            return 2  # 中价
+        elif price <= 200:
+            return 3  # 中高价
+        else:
+            return 4  # 高价
+    
+    train_processed['price_category'] = train_processed['avg_price_per_room'].apply(categorize_price)
+    test_processed['price_category'] = test_processed['avg_price_per_room'].apply(categorize_price)
 
-    # 5. 首付比率
-    train_processed['down_payment_ratio'] = train_processed['down_payment'] / (train_processed['price'] + 1)
-    test_processed['down_payment_ratio'] = test_processed['down_payment'] / (test_processed['price'] + 1)
+    # 5. 客户忠诚度评分
+    train_processed['loyalty_score'] = train_processed['repeated_guest'] * 2 + \
+                                      train_processed['no_of_previous_bookings_not_canceled'] - \
+                                      train_processed['no_of_previous_cancellations']
+    test_processed['loyalty_score'] = test_processed['repeated_guest'] * 2 + \
+                                     test_processed['no_of_previous_bookings_not_canceled'] - \
+                                     test_processed['no_of_previous_cancellations']
 
     # 6. 风险评分
-    train_processed['risk_score'] = train_processed['crime_cases_reported'] + train_processed['legal_cases_on_property']
-    test_processed['risk_score'] = test_processed['crime_cases_reported'] + test_processed['legal_cases_on_property']
+    train_processed['risk_score'] = train_processed['lead_time_category'] + \
+                                   train_processed['price_category'] - \
+                                   train_processed['no_of_special_requests']
+    test_processed['risk_score'] = test_processed['lead_time_category'] + \
+                                  test_processed['price_category'] - \
+                                  test_processed['no_of_special_requests']
 
-    # 7. 质量评分
-    train_processed['quality_score'] = train_processed['satisfaction_score'] + train_processed['neighbourhood_rating'] + \
-                                       train_processed['connectivity_score']
-    test_processed['quality_score'] = test_processed['satisfaction_score'] + test_processed['neighbourhood_rating'] + \
-                                      test_processed['connectivity_score']
+    # 7. 季节性特征
+    def get_season(month):
+        if month in [12, 1, 2]:
+            return 0  # 冬季
+        elif month in [3, 4, 5]:
+            return 1  # 春季
+        elif month in [6, 7, 8]:
+            return 2  # 夏季
+        else:
+            return 3  # 秋季
+    
+    train_processed['season'] = train_processed['arrival_month'].apply(get_season)
+    test_processed['season'] = test_processed['arrival_month'].apply(get_season)
 
     # 4. 对衍生特征应用分区间策略
     print("4. 对衍生特征应用分区间策略...")
     
     # 衍生特征的分区间策略
     derived_binning_strategies = {
-        'affordability_ratio': {'strategy': 'quantile', 'n_bins': 6},
-        'loan_to_value': {'strategy': 'quantile', 'n_bins': 6},
-        'down_payment_ratio': {'strategy': 'quantile', 'n_bins': 6},
-        'payment_capacity': {'strategy': 'equal_width', 'n_bins': 6}
+        'total_nights': {'strategy': 'equal_width', 'n_bins': 6},
+        'total_guests': {'strategy': 'equal_width', 'n_bins': 5},
+        'loyalty_score': {'strategy': 'quantile', 'n_bins': 6},
+        'risk_score': {'strategy': 'quantile', 'n_bins': 6}
     }
     
     # 对训练数据应用衍生特征分区间
-    train_processed, derived_bin_edges = apply_binning_strategies(
+    train_processed, derived_bin_edges = apply_hotel_binning_strategies(
         train_processed, derived_binning_strategies, is_training=True
     )
     
@@ -204,18 +247,18 @@ def preprocess_data(train_df, test_df):
                 print(f"  测试数据{feature}分区间失败 - {e}")
                 continue
 
-    print("数据预处理完成!")
+    print("酒店预订数据预处理完成!")
     return train_processed, test_processed, label_encoders
 
 
-# 优化版决策树实现
-class OptimizedDecisionTree:
+# 酒店预订优化版决策树实现
+class HotelBookingDecisionTree:
     """
-    优化版决策树实现 - 解决训练速度慢的问题
+    酒店预订取消预测优化版决策树实现
     """
 
-    def __init__(self, max_depth=10, min_samples_split=50, min_samples_leaf=25,
-                 max_features=None, criterion='entropy', random_state=42):
+    def __init__(self, max_depth=12, min_samples_split=30, min_samples_leaf=15,
+                 max_features='sqrt', criterion='entropy', random_state=42):
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.min_samples_leaf = min_samples_leaf
@@ -230,7 +273,7 @@ class OptimizedDecisionTree:
         if len(y) == 0:
             return 0
         # 使用bincount和向量化操作
-        counts = np.bincount(y)
+        counts = np.bincount(y, minlength=2)  # 确保至少有两个类别
         probabilities = counts / len(y)
         # 避免log(0)的问题
         probabilities = probabilities[probabilities > 0]
@@ -240,7 +283,7 @@ class OptimizedDecisionTree:
         """向量化基尼不纯度计算"""
         if len(y) == 0:
             return 0
-        counts = np.bincount(y)
+        counts = np.bincount(y, minlength=2)  # 确保至少有两个类别
         probabilities = counts / len(y)
         return 1 - np.sum(probabilities ** 2)
 
@@ -316,7 +359,7 @@ class OptimizedDecisionTree:
 
     def _create_leaf(self, y):
         """创建叶节点"""
-        counts = np.bincount(y)
+        counts = np.bincount(y, minlength=2)  # 确保至少有两个类别
         return np.argmax(counts)
 
     def _build_tree_optimized(self, X, y, depth=0):
@@ -331,12 +374,16 @@ class OptimizedDecisionTree:
         feature, threshold, gain = self._find_best_split_optimized(X, y)
 
         # 如果没有好的分割，创建叶节点
-        if feature is None or gain <= 0:
+        if feature is None or gain <= 0.001:  # 降低增益阈值
             return self._create_leaf(y)
 
         # 分割数据
         left_mask = X[:, feature] <= threshold
         right_mask = ~left_mask
+
+        # 检查分割后的样本数
+        if np.sum(left_mask) < self.min_samples_leaf or np.sum(right_mask) < self.min_samples_leaf:
+            return self._create_leaf(y)
 
         # 递归构建子树
         left_subtree = self._build_tree_optimized(X[left_mask], y[left_mask], depth + 1)
@@ -358,13 +405,13 @@ class OptimizedDecisionTree:
         if hasattr(X, 'columns'):
             self.feature_names = X.columns.tolist()
 
-        print(f"开始训练决策树...")
+        print(f"开始训练酒店预订决策树...")
         start_time = time.time()
 
         self.tree = self._build_tree_optimized(X, y)
 
         end_time = time.time()
-        print(f"决策树训练完成，耗时: {end_time - start_time:.2f}秒")
+        print(f"酒店预订决策树训练完成，耗时: {end_time - start_time:.2f}秒")
 
         return self
 
@@ -434,7 +481,7 @@ class OptimizedDecisionTree:
         # 绘制树结构
         self._draw_tree(ax, self.tree, 0.5, 0.9, 0.4, 0.1, max_depth, tree_info)
         
-        plt.title('决策树结构可视化', fontsize=16, fontweight='bold', pad=20)
+        plt.title('酒店预订取消预测决策树结构可视化', fontsize=16, fontweight='bold', pad=20)
         plt.tight_layout()
         plt.show()
 
@@ -468,10 +515,10 @@ class OptimizedDecisionTree:
             feature_name = self.feature_names[node['feature']] if self.feature_names else f'Feature_{node["feature"]}'
             node_text = f'{feature_name}\n≤ {node["threshold"]:.2f}'
         else:
-            # 叶节点 - 绿色
-            color = '#7ED321' if node == 1 else '#F5A623'
+            # 叶节点 - 绿色表示不取消，红色表示取消
+            color = '#7ED321' if node == 0 else '#F5A623'
             text_color = 'white'
-            node_text = f'类别: {node}'
+            node_text = f'预测: {"不取消" if node == 0 else "取消"}'
         
         # 绘制节点
         bbox = FancyBboxPatch(
@@ -542,7 +589,7 @@ class OptimizedDecisionTree:
         
         plt.yticks(range(len(top_features)), top_features['feature'])
         plt.xlabel('特征重要性', fontsize=12)
-        plt.title(f'决策树特征重要性 (Top {top_n})', fontsize=14, fontweight='bold')
+        plt.title(f'酒店预订决策树特征重要性 (Top {top_n})', fontsize=14, fontweight='bold')
         plt.grid(axis='x', alpha=0.3)
         
         # 添加数值标签
@@ -555,22 +602,41 @@ class OptimizedDecisionTree:
         
         return top_features
 
-
+    def plot_confusion_matrix(self, y_true, y_pred, figsize=(8, 6)):
+        """绘制混淆矩阵"""
+        cm = confusion_matrix(y_true, y_pred)
+        
+        plt.figure(figsize=figsize)
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                   xticklabels=['不取消', '取消'], 
+                   yticklabels=['不取消', '取消'])
+        plt.title('酒店预订取消预测混淆矩阵', fontsize=14, fontweight='bold')
+        plt.xlabel('预测值', fontsize=12)
+        plt.ylabel('真实值', fontsize=12)
+        plt.tight_layout()
+        plt.show()
 
 
 if __name__ == '__main__':
     # 设置随机种子
     np.random.seed(42)
 
-    train_df = pd.read_csv('train.csv')
-    test_df = pd.read_csv('test.csv')
+    # 读取酒店预订数据
+    train_df = pd.read_csv('sol_3/train.csv')
+    test_df = pd.read_csv('sol_3/test.csv')
 
     print(f"训练数据形状: {train_df.shape}")
     print(f"测试数据形状: {test_df.shape}")
+    
+    # 查看标签分布
+    print(f"\n标签分布:")
+    label_counts = train_df['label'].value_counts()
+    print(f"不取消 (0): {label_counts[0]} ({label_counts[0]/len(train_df)*100:.2f}%)")
+    print(f"取消 (1): {label_counts[1]} ({label_counts[1]/len(train_df)*100:.2f}%)")
 
     # 应用预处理
-    print("预处理数据...")
-    train_processed, test_processed, encoders = preprocess_data(train_df, test_df)
+    print("\n预处理数据...")
+    train_processed, test_processed, encoders = preprocess_hotel_data(train_df, test_df)
 
     # 准备特征和目标
     feature_cols = [col for col in train_processed.columns if col not in ['id', 'label']]
@@ -578,11 +644,16 @@ if __name__ == '__main__':
     y_train = train_processed['label']
     X_test = test_processed[feature_cols]
 
+    print(f"\n特征数量: {len(feature_cols)}")
+    print(f"特征列表: {feature_cols}")
+
+    # 决策树配置
     config = {
-        'max_depth': 8,
-        'min_samples_split': 50,
-        'min_samples_leaf': 25,
-        'max_features': None
+        'max_depth': 18,
+        'min_samples_split': 20,
+        'min_samples_leaf': 10,
+        'max_features': None,  # 使用所有特征
+        'criterion': 'entropy'
     }
 
     # 分割数据用于验证
@@ -590,13 +661,13 @@ if __name__ == '__main__':
         X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
     )
 
-    print(f"训练集大小: {X_train_split.shape[0]}")
+    print(f"\n训练集大小: {X_train_split.shape[0]}")
     print(f"验证集大小: {X_val_split.shape[0]}")
 
     # 训练最终模型
-    print("开始训练最终模型...")
+    print("\n开始训练最终模型...")
     start_time = time.time()
-    final_model = OptimizedDecisionTree(**config)
+    final_model = HotelBookingDecisionTree(**config)
     final_model.fit(X_train_split, y_train_split)
     training_time = time.time() - start_time
 
@@ -611,6 +682,10 @@ if __name__ == '__main__':
     print(f"准确率: {val_accuracy:.4f}")
     print(f"Macro-F1: {val_macro_f1:.4f}")
 
+    # 绘制混淆矩阵
+    print("\n绘制验证集混淆矩阵...")
+    final_model.plot_confusion_matrix(y_val_split, val_predictions)
+
     print(f"\n生成测试集预测...")
     start_time = time.time()
     test_predictions = final_model.predict(X_test)
@@ -624,7 +699,7 @@ if __name__ == '__main__':
         'label': test_predictions
     })
 
-    submission_filename = 'submission.csv'
+    submission_filename = 'hotel_booking_submission.csv'
     submission_df.to_csv(submission_filename, index=False)
 
     print(f"提交文件 '{submission_filename}' 创建成功!")
@@ -651,4 +726,4 @@ if __name__ == '__main__':
     for i, (idx, row) in enumerate(top_features.tail(10).iterrows()):
         print(f"{i+1:2d}. {row['feature']:<25} {row['importance']:.4f}")
     
-    print("\n决策树可视化完成!")
+    print("\n酒店预订决策树可视化完成!")
