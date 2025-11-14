@@ -1,0 +1,89 @@
+================================================================================
+Neural Network Model Detailed Comparison Table
+================================================================================
+
+Model Basic Information:
+--------------------------------------------------------------------------------
+Input Dimension: 29
+Hidden Layer Configuration: [256, 128, 64, 32]
+Output Dimension: 1
+Dropout Rate: 0.3
+Use BatchNorm: True
+
+Layer-wise Detailed Information:
+--------------------------------------------------------------------------------
+
+Layer 1: network.0
+  Type: Linear (Fully Connected Layer)
+  Input Features: 29
+  Output Features: 256
+  Weight Shape: torch.Size([256, 29])
+  Weight Parameter Count: 7,424
+  Bias Shape: torch.Size([256])
+  Bias Parameter Count: 256
+  Total Parameter Count: 7,680
+
+  BatchNorm Layer: network.1
+  Features: 256
+  Parameter Count: 512
+
+Layer 2: network.4
+  Type: Linear (Fully Connected Layer)
+  Input Features: 256
+  Output Features: 128
+  Weight Shape: torch.Size([128, 256])
+  Weight Parameter Count: 32,768
+  Bias Shape: torch.Size([128])
+  Bias Parameter Count: 128
+  Total Parameter Count: 32,896
+
+  BatchNorm Layer: network.5
+  Features: 128
+  Parameter Count: 256
+
+Layer 3: network.8
+  Type: Linear (Fully Connected Layer)
+  Input Features: 128
+  Output Features: 64
+  Weight Shape: torch.Size([64, 128])
+  Weight Parameter Count: 8,192
+  Bias Shape: torch.Size([64])
+  Bias Parameter Count: 64
+  Total Parameter Count: 8,256
+
+  BatchNorm Layer: network.9
+  Features: 64
+  Parameter Count: 128
+
+Layer 4: network.12
+  Type: Linear (Fully Connected Layer)
+  Input Features: 64
+  Output Features: 32
+  Weight Shape: torch.Size([32, 64])
+  Weight Parameter Count: 2,048
+  Bias Shape: torch.Size([32])
+  Bias Parameter Count: 32
+  Total Parameter Count: 2,080
+
+  BatchNorm Layer: network.13
+  Features: 32
+  Parameter Count: 64
+
+Layer 5: network.16
+  Type: Linear (Fully Connected Layer)
+  Input Features: 32
+  Output Features: 1
+  Weight Shape: torch.Size([1, 32])
+  Weight Parameter Count: 32
+  Bias Shape: torch.Size([1])
+  Bias Parameter Count: 1
+  Total Parameter Count: 33
+
+================================================================================
+Overall Statistics:
+--------------------------------------------------------------------------------
+Total Parameter Count: 51,905
+Trainable Parameters: 51,905
+Non-trainable Parameters: 0
+Model Size: 0.20 MB
+================================================================================

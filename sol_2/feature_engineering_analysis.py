@@ -19,6 +19,209 @@ warnings.filterwarnings('ignore')
 plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
+def analyze_initial_dataset(df):
+    """
+    分析初始数据集：识别并详细分析数值型特征和类别型特征
+    """
+    print("\n" + "="*60)
+    print("初始数据集分析：数值型特征 vs 类别型特征")
+    print("="*60)
+    
+    # 1. 识别特征类型
+    numeric_features = df.select_dtypes(include=[np.number]).columns.tolist()
+    categorical_features = df.select_dtypes(include=['object']).columns.tolist()
+    
+    # 排除id和label（这些不是特征）
+    numeric_features = [col for col in numeric_features if col not in ['id', 'label']]
+    
+    print(f"\n数据集基本信息:")
+    print(f"  总样本数: {len(df)}")
+    print(f"  总特征数: {len(df.columns) - 1}")  # 排除label
+    print(f"  数值型特征数: {len(numeric_features)}")
+    print(f"  类别型特征数: {len(categorical_features)}")
+    
+    # 2. 数值型特征详细分析
+    print("\n" + "-"*60)
+    print("数值型特征分析")
+    print("-"*60)
+    print(f"\n数值型特征列表 ({len(numeric_features)}个):")
+    for i, feat in enumerate(numeric_features, 1):
+        print(f"  {i:2d}. {feat}")
+    
+    # 数值型特征统计信息
+    print(f"\n数值型特征统计摘要:")
+    numeric_stats = df[numeric_features].describe()
+    print(numeric_stats)
+    
+    # 检查缺失值
+    print(f"\n数值型特征缺失值检查:")
+    missing_numeric = df[numeric_features].isnull().sum()
+    if missing_numeric.sum() == 0:
+        print("  ✓ 所有数值型特征均无缺失值")
+    else:
+        print(missing_numeric[missing_numeric > 0])
+    
+    # 检查异常值（使用IQR方法）
+    print(f"\n数值型特征异常值检测 (IQR方法):")
+    outlier_summary = {}
+    for feat in numeric_features:
+        Q1 = df[feat].quantile(0.25)
+        Q3 = df[feat].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        outliers = df[(df[feat] < lower_bound) | (df[feat] > upper_bound)][feat]
+        outlier_count = len(outliers)
+        outlier_pct = (outlier_count / len(df)) * 100
+        outlier_summary[feat] = {
+            'count': outlier_count,
+            'percentage': outlier_pct,
+            'min': df[feat].min(),
+            'max': df[feat].max(),
+            'mean': df[feat].mean(),
+            'std': df[feat].std()
+        }
+        if outlier_count > 0:
+            print(f"  {feat}: {outlier_count} 个异常值 ({outlier_pct:.2f}%)")
+    
+    # 3. 类别型特征详细分析
+    print("\n" + "-"*60)
+    print("类别型特征分析")
+    print("-"*60)
+    print(f"\n类别型特征列表 ({len(categorical_features)}个):")
+    for i, feat in enumerate(categorical_features, 1):
+        print(f"  {i}. {feat}")
+    
+    # 类别型特征分布
+    print(f"\n类别型特征分布详情:")
+    for feat in categorical_features:
+        print(f"\n{feat}:")
+        value_counts = df[feat].value_counts()
+        print(f"  唯一值数量: {df[feat].nunique()}")
+        print(f"  值分布:")
+        for value, count in value_counts.items():
+            pct = (count / len(df)) * 100
+            print(f"    {value}: {count} ({pct:.2f}%)")
+    
+    # 检查缺失值
+    print(f"\n类别型特征缺失值检查:")
+    missing_categorical = df[categorical_features].isnull().sum()
+    if missing_categorical.sum() == 0:
+        print("  ✓ 所有类别型特征均无缺失值")
+    else:
+        print(missing_categorical[missing_categorical > 0])
+    
+    # 4. 可视化分析
+    print("\n" + "-"*60)
+    print("生成可视化图表...")
+    print("-"*60)
+    
+    # 4.1 数值型特征分布直方图
+    n_numeric = len(numeric_features)
+    n_cols = 4
+    n_rows = (n_numeric + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 4*n_rows))
+    axes = axes.ravel() if n_rows > 1 else [axes] if n_numeric == 1 else axes
+    
+    for i, feat in enumerate(numeric_features):
+        if i < len(axes):
+            df[feat].hist(bins=50, ax=axes[i], edgecolor='black', alpha=0.7)
+            axes[i].set_title(f'{feat}\n(mean={df[feat].mean():.2f}, std={df[feat].std():.2f})')
+            axes[i].set_xlabel('Value')
+            axes[i].set_ylabel('Frequency')
+            axes[i].grid(True, alpha=0.3)
+    
+    # 隐藏多余的子图
+    for i in range(n_numeric, len(axes)):
+        axes[i].axis('off')
+    
+    plt.suptitle('数值型特征分布直方图', fontsize=16, y=1.02)
+    plt.tight_layout()
+    plt.savefig('numeric_features_distribution.png', dpi=300, bbox_inches='tight')
+    print("  ✓ 已保存: numeric_features_distribution.png")
+    plt.close()
+    
+    # 4.2 类别型特征分布条形图
+    n_categorical = len(categorical_features)
+    fig, axes = plt.subplots(1, n_categorical, figsize=(6*n_categorical, 6))
+    if n_categorical == 1:
+        axes = [axes]
+    
+    for i, feat in enumerate(categorical_features):
+        value_counts = df[feat].value_counts()
+        value_counts.plot(kind='bar', ax=axes[i], color='steelblue', edgecolor='black')
+        axes[i].set_title(f'{feat} 分布\n(唯一值: {df[feat].nunique()})')
+        axes[i].set_xlabel('Category')
+        axes[i].set_ylabel('Count')
+        axes[i].tick_params(axis='x', rotation=45)
+        axes[i].grid(True, alpha=0.3, axis='y')
+    
+    plt.suptitle('类别型特征分布条形图', fontsize=16, y=1.02)
+    plt.tight_layout()
+    plt.savefig('categorical_features_distribution.png', dpi=300, bbox_inches='tight')
+    print("  ✓ 已保存: categorical_features_distribution.png")
+    plt.close()
+    
+    # 4.3 数值型特征箱线图（检测异常值）
+    n_cols = 4
+    n_rows = (n_numeric + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 4*n_rows))
+    axes = axes.ravel() if n_rows > 1 else [axes] if n_numeric == 1 else axes
+    
+    for i, feat in enumerate(numeric_features):
+        if i < len(axes):
+            df.boxplot(column=feat, ax=axes[i], vert=True)
+            axes[i].set_title(f'{feat}')
+            axes[i].grid(True, alpha=0.3)
+    
+    for i in range(n_numeric, len(axes)):
+        axes[i].axis('off')
+    
+    plt.suptitle('数值型特征箱线图（异常值检测）', fontsize=16, y=1.02)
+    plt.tight_layout()
+    plt.savefig('numeric_features_boxplot.png', dpi=300, bbox_inches='tight')
+    print("  ✓ 已保存: numeric_features_boxplot.png")
+    plt.close()
+    
+    # 5. 特征与标签的初步关系
+    if 'label' in df.columns:
+        print("\n" + "-"*60)
+        print("特征与标签的初步关系分析")
+        print("-"*60)
+        
+        # 数值型特征与标签的相关性
+        print("\n数值型特征与标签的相关系数:")
+        numeric_label_corr = {}
+        for feat in numeric_features:
+            corr = df[feat].corr(df['label'])
+            numeric_label_corr[feat] = corr
+        
+        corr_df = pd.DataFrame(list(numeric_label_corr.items()), 
+                              columns=['Feature', 'Correlation_with_Label'])
+        corr_df = corr_df.sort_values('Correlation_with_Label', key=abs, ascending=False)
+        print(corr_df.to_string(index=False))
+        
+        # 类别型特征与标签的关系
+        print("\n类别型特征与标签的关系:")
+        for feat in categorical_features:
+            print(f"\n{feat} vs Label:")
+            crosstab = pd.crosstab(df[feat], df['label'], margins=True)
+            print(crosstab)
+            
+            # 计算每个类别中标签的分布比例
+            print(f"  各类别中标签1的比例:")
+            for category in df[feat].unique():
+                category_data = df[df[feat] == category]
+                label_1_ratio = (category_data['label'] == 1).sum() / len(category_data)
+                print(f"    {category}: {label_1_ratio:.4f} ({label_1_ratio*100:.2f}%)")
+    
+    print("\n" + "="*60)
+    print("初始数据集分析完成！")
+    print("="*60)
+    
+    return numeric_features, categorical_features
+
 def main():
     print("="*60)
     print("特征工程分析：类别型特征标签化 + 连续特征分箱 + 新特征创建")
@@ -26,16 +229,18 @@ def main():
     
     # 1. 读取数据
     df = pd.read_csv('train.csv')
-    print(f"原始数据形状: {df.shape}")
+    print(f"\n原始数据形状: {df.shape}")
     print("原始特征类型:")
     print(df.dtypes.value_counts())
+    
+    # 1.5 初始数据集分析
+    numeric_features, categorical_features = analyze_initial_dataset(df)
     
     # 2. 类别型特征标签化
     print("\n" + "="*60)
     print("1. 类别型特征标签化")
     print("="*60)
     
-    categorical_features = df.select_dtypes(include=['object']).columns.tolist()
     print(f"类别型特征: {categorical_features}")
     
     label_encoders = {}

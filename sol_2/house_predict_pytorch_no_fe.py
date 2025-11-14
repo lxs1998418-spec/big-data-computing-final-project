@@ -31,12 +31,12 @@ def get_memory_usage():
     return memory_info.rss / (1024 * 1024)  # 转换为MB
 
 
-# 数据预处理函数
+# 数据预处理函数（不进行特征工程）
 def preprocess_data(train_df, test_df):
     train_processed = train_df.copy()
     test_processed = test_df.copy()
 
-    print("开始数据预处理...")
+    print("开始数据预处理（无特征工程）...")
     
     # 处理分类变量
     categorical_cols = ['country', 'property_type', 'furnishing_status']
@@ -50,38 +50,9 @@ def preprocess_data(train_df, test_df):
         test_processed[col] = le.transform(test_processed[col])
         label_encoders[col] = le
 
-    # 特征工程
-    
-    # 可负担性比率
-    train_processed['affordability_ratio'] = train_processed['customer_salary'] / (train_processed['price'] + 1)
-    test_processed['affordability_ratio'] = test_processed['customer_salary'] / (test_processed['price'] + 1)
+    # 注意：这里不进行任何特征工程，只使用原始特征
 
-    # 贷款价值比
-    train_processed['loan_to_value'] = train_processed['loan_amount'] / (train_processed['price'] + 1)
-    test_processed['loan_to_value'] = test_processed['loan_amount'] / (test_processed['price'] + 1)
-
-    # 房产年龄
-    current_year = 2025
-    train_processed['property_age'] = current_year - train_processed['constructed_year']
-    test_processed['property_age'] = current_year - test_processed['constructed_year']
-
-    # 支付能力
-    train_processed['payment_capacity'] = train_processed['customer_salary'] - train_processed['monthly_expenses']
-    test_processed['payment_capacity'] = test_processed['customer_salary'] - test_processed['monthly_expenses']
-
-    # 首付比率
-    train_processed['down_payment_ratio'] = train_processed['down_payment'] / (train_processed['price'] + 1)
-    test_processed['down_payment_ratio'] = test_processed['down_payment'] / (test_processed['price'] + 1)
-
-    # 风险评分
-    train_processed['risk_score'] = train_processed['crime_cases_reported'] + train_processed['legal_cases_on_property']
-    test_processed['risk_score'] = test_processed['crime_cases_reported'] + test_processed['legal_cases_on_property']
-
-    # 质量评分
-    train_processed['quality_score'] = train_processed['satisfaction_score'] + train_processed['neighbourhood_rating'] + train_processed['connectivity_score']
-    test_processed['quality_score'] = test_processed['satisfaction_score'] + test_processed['neighbourhood_rating'] + test_processed['connectivity_score']
-
-    print("数据预处理完成!")
+    print("数据预处理完成（仅分类变量编码）!")
     return train_processed, test_processed, label_encoders
 
 
@@ -427,7 +398,7 @@ def plot_training_history(history):
     axes[0].plot(history['val_loss'], label='Val Loss', marker='s')
     axes[0].set_xlabel('Epoch')
     axes[0].set_ylabel('Loss')
-    axes[0].set_title('Training and Validation Loss')
+    axes[0].set_title('Training and Validation Loss (No Feature Engineering)')
     axes[0].legend()
     axes[0].grid(True)
     
@@ -436,7 +407,7 @@ def plot_training_history(history):
     axes[1].plot(history['val_acc'], label='Val Acc', marker='s')
     axes[1].set_xlabel('Epoch')
     axes[1].set_ylabel('Accuracy')
-    axes[1].set_title('Training and Validation Accuracy')
+    axes[1].set_title('Training and Validation Accuracy (No Feature Engineering)')
     axes[1].legend()
     axes[1].grid(True)
     
@@ -450,12 +421,16 @@ def plot_training_history(history):
         axes[2].grid(True)
     
     plt.tight_layout()
-    plt.savefig('training_history.png', dpi=150, bbox_inches='tight')
+    plt.savefig('training_history_no_fe.png', dpi=150, bbox_inches='tight')
     plt.close()
 
 
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    print("="*60)
+    print("训练模型 - 无特征工程版本")
+    print("="*60)
     
     # 加载数据
     print("\n加载数据...")
@@ -464,8 +439,8 @@ if __name__ == '__main__':
     
     print(f"训练数据形状: {train_df.shape}, 测试数据形状: {test_df.shape}")
     
-    # 数据预处理
-    print("\n预处理数据...")
+    # 数据预处理（不进行特征工程）
+    print("\n预处理数据（无特征工程）...")
     train_processed, test_processed, encoders = preprocess_data(train_df, test_df)
     
     # 准备特征和目标
@@ -474,6 +449,8 @@ if __name__ == '__main__':
     y_train = train_processed['label']
     X_test = test_processed[feature_cols]
     
+    print(f"\n特征数量: {len(feature_cols)}")
+    print(f"特征列表: {feature_cols}")
     
     # 数据标准化
     print("\n标准化特征...")
@@ -544,7 +521,7 @@ if __name__ == '__main__':
     # 计算Macro-F1
     val_macro_f1 = f1_score(y_val_split, val_predictions, average='macro')
     
-    print(f"\n验证集性能:")
+    print(f"\n验证集性能（无特征工程）:")
     print(f"损失: {val_loss:.4f}")
     print(f"准确率: {val_accuracy:.4f}")
     print(f"Macro-F1: {val_macro_f1:.4f}")
@@ -582,7 +559,7 @@ if __name__ == '__main__':
         'label': test_predictions
     })
     
-    submission_filename = 'submission_pytorch.csv'
+    submission_filename = 'submission_pytorch_no_fe.csv'
     submission_df.to_csv(submission_filename, index=False)
     
     print(f"测试预测分布:")
@@ -591,8 +568,10 @@ if __name__ == '__main__':
         print(f"  类别 {label}: {count} 样本 ({count / len(test_predictions) * 100:.1f}%)")
     
     # 保存模型（可选）
-    model_save_path = 'best_model_pytorch.pth'
+    model_save_path = 'best_model_pytorch_no_fe.pth'
     torch.save(model.state_dict(), model_save_path)
     
+    print("\n" + "="*60)
     print("任务完成！")
+    print("="*60)
 
